@@ -13,8 +13,10 @@
 #include <functional>
 #include <limits>
 #include <vector>
+#include <iostream>
 
 #include "gloo/common/string.h"
+#include "gloo/common/ccl_monitor.h"
 
 namespace gloo {
 

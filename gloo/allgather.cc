@@ -17,7 +17,12 @@
 namespace gloo {
 
 void allgather(AllgatherOptions& opts) {
+  std::cout << "[GLOO] using allgather.cc/allgather" << '\n';
   const auto& context = opts.context;
+  gloo::ccl::CCLMonitor cclMonitor(context);
+  // Record start of allgather
+  cclMonitor.recordStart("allgather", "default", "unknown", opts.elementSize * opts.out->size / context->size );
+
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kAllgatherSlotPrefix, opts.tag);

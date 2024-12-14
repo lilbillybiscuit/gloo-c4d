@@ -70,6 +70,10 @@ void AllgathervOptions::setOutput(
 
 void allgatherv(AllgathervOptions& opts) {
   const auto& context = opts.context;
+
+  gloo::ccl::CCLMonitor cclMonitor(context);
+
+  cclMonitor.recordStart("allgatherv", "default", "unknown", opts.elementSize * opts.out->size / context->size);
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kAllgatherSlotPrefix, opts.tag);
@@ -137,6 +141,8 @@ void allgatherv(AllgathervOptions& opts) {
   // Wait for final operations to complete.
   out->waitSend(opts.timeout);
   out->waitRecv(opts.timeout);
+  std::cout << "[GLOO] allgatherv.cc/allgather done" << std::endl;
+  cclMonitor.recordEnd("allgatherv");
 }
 
 } // namespace gloo

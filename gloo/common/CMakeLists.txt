@@ -1,6 +1,8 @@
 set(GLOO_COMMON_SRCS
   "${CMAKE_CURRENT_SOURCE_DIR}/logging.cc"
   "${CMAKE_CURRENT_SOURCE_DIR}/utils.cc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/debug.cc"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ccl_monitor.cc"
   )
 
 set(GLOO_COMMON_HDRS
@@ -11,6 +13,8 @@ set(GLOO_COMMON_HDRS
   "${CMAKE_CURRENT_SOURCE_DIR}/store.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/string.h"
   "${CMAKE_CURRENT_SOURCE_DIR}/utils.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/debug.h"
+  "${CMAKE_CURRENT_SOURCE_DIR}/ccl_monitor.h"
   )
 
 if(${CMAKE_SYSTEM_NAME} STREQUAL "Linux")

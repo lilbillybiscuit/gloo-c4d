@@ -16,6 +16,7 @@ BarrierOptions::BarrierOptions(const std::shared_ptr<Context>& context)
       timeout(context->getTimeout()) {}
 
 void barrier(BarrierOptions& opts) {
+  std::cout << "[GLOO] barrier.cc/barrier" << std::endl;
   const auto& context = opts.context;
   auto& buffer = opts.buffer;
   const auto slot = Slot::build(kBarrierSlotPrefix, opts.tag);
@@ -33,6 +34,7 @@ void barrier(BarrierOptions& opts) {
     buffer->waitRecv(opts.timeout);
     buffer->waitSend(opts.timeout);
   }
+  std::cout << "[GLOO] barrier.cc/barrier done" << std::endl;
 }
 
 } // namespace gloo

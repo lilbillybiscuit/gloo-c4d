@@ -23,6 +23,7 @@ void reduce(ReduceOptions& opts) {
     return;
   }
   const auto& context = opts.context;
+
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kReduceSlotPrefix, opts.tag);

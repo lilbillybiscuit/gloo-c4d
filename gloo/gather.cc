@@ -16,6 +16,7 @@
 namespace gloo {
 
 void gather(GatherOptions& opts) {
+  std::cout << "[GLOO] gather.cc/gather" << std::endl;
   const auto& context = opts.context;
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
@@ -57,6 +58,7 @@ void gather(GatherOptions& opts) {
     in->send(opts.root, slot);
     in->waitSend(opts.timeout);
   }
+  std::cout << "[GLOO] gather.cc/gather done" << std::endl;
 }
 
 } // namespace gloo

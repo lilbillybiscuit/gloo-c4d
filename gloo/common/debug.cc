@@ -3,7 +3,7 @@
 namespace gloo {
     namespace debug {
 
-        DebugLevel global_debug_level = DebugLevel::NONE;
+        DebugLevel global_debug_level = DebugLevel::VERBOSE;
 
     }
 }

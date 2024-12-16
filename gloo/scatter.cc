@@ -17,6 +17,7 @@
 namespace gloo {
 
 void scatter(ScatterOptions& opts) {
+  std::cout << "[GLOO] scatter.cc/scatter" << std::endl;
   const auto& context = opts.context;
   std::vector<std::unique_ptr<transport::UnboundBuffer>>& in = opts.in;
   std::unique_ptr<transport::UnboundBuffer>& out = opts.out;
@@ -58,6 +59,7 @@ void scatter(ScatterOptions& opts) {
     out->recv(opts.root, slot);
     out->waitRecv(opts.timeout);
   }
+  std::cout << "[GLOO] scatter.cc/scatter done" << std::endl;
 }
 
 } // namespace gloo

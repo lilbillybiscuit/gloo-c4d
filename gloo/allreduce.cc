@@ -672,7 +672,9 @@ void bcube(
 } // namespace
 
 void allreduce(const AllreduceOptions& opts) {
+  std::cout << "[GLOO] allreduce.cc/allreduce" << std::endl;
   allreduce(opts.impl_);
+  std::cout << "[GLOO] allreduce.cc/allreduce done" << std::endl;
 }
 
 } // namespace gloo

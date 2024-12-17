@@ -72,6 +72,7 @@ void GathervOptions::setOutput(
 
 void gatherv(GathervOptions& opts) {
   const auto& context = opts.context;
+
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kGatherSlotPrefix, opts.tag);

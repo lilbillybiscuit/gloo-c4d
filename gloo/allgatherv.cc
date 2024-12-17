@@ -70,10 +70,7 @@ void AllgathervOptions::setOutput(
 
 void allgatherv(AllgathervOptions& opts) {
   const auto& context = opts.context;
-
-  gloo::ccl::CCLMonitor cclMonitor(context);
-
-  cclMonitor.recordStart("allgatherv", "default", "unknown", opts.elementSize * opts.out->size / context->size);
+  RECORD_START("allgatherv", "default", "unknown", opts.elementSize);
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kAllgatherSlotPrefix, opts.tag);
@@ -126,23 +123,23 @@ void allgatherv(AllgathervOptions& opts) {
     const size_t recvIndex = (baseIndex - i - 1) % context->size;
 
     if (i == 0) {
-      out->send(sendRank, slot, byteOffsets[sendIndex], byteCounts[sendIndex]);
-      out->recv(recvRank, slot, byteOffsets[recvIndex], byteCounts[recvIndex]);
+      SEND(out, sendRank, slot, byteOffsets[sendIndex], byteCounts[sendIndex]);
+      RECV(out, recvRank, slot, byteOffsets[recvIndex], byteCounts[recvIndex]);
       continue;
     }
 
     // Wait for previous operations to complete before kicking off new ones.
-    out->waitSend(opts.timeout);
-    out->waitRecv(opts.timeout);
-    out->send(sendRank, slot, byteOffsets[sendIndex], byteCounts[sendIndex]);
-    out->recv(recvRank, slot, byteOffsets[recvIndex], byteCounts[recvIndex]);
+    WAIT_SEND(out, opts.timeout);
+    WAIT_RECV(out, opts.timeout);
+    SEND(out, sendRank, slot, byteOffsets[sendIndex], byteCounts[sendIndex]);
+    RECV(out, recvRank, slot, byteOffsets[recvIndex], byteCounts[recvIndex]);
   }
 
   // Wait for final operations to complete.
-  out->waitSend(opts.timeout);
-  out->waitRecv(opts.timeout);
-  std::cout << "[GLOO] allgatherv.cc/allgather done" << std::endl;
-  cclMonitor.recordEnd("allgatherv");
+  WAIT_SEND(out, opts.timeout);
+  WAIT_RECV(out, opts.timeout);
+  RECORD_END();
+  std::cout << "[GLOO] allgatherv.cc/allgather done" << '\n';
 }
 
 } // namespace gloo

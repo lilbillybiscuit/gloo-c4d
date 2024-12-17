@@ -18,6 +18,7 @@ BarrierOptions::BarrierOptions(const std::shared_ptr<Context>& context)
 void barrier(BarrierOptions& opts) {
   std::cout << "[GLOO] barrier.cc/barrier" << std::endl;
   const auto& context = opts.context;
+  RECORD_START("barrier", "default", "unknown", context->size)
   auto& buffer = opts.buffer;
   const auto slot = Slot::build(kBarrierSlotPrefix, opts.tag);
 
@@ -30,11 +31,15 @@ void barrier(BarrierOptions& opts) {
   // compute 2^i and compare with context->size.
   for (size_t d = 1; d < context->size; d <<= 1) {
     buffer->recv((context->size + context->rank - d) % context->size, slot);
+    RECORD_RECV_START((context->size + context->rank - d) % context->size, 8)
     buffer->send((context->size + context->rank + d) % context->size, slot);
-    buffer->waitRecv(opts.timeout);
-    buffer->waitSend(opts.timeout);
+    RECORD_SEND_START((context->size + context->rank + d) % context->size, 8)
+    // buffer->waitRecv(opts.timeout);
+    WAIT_RECV(buffer, opts.timeout);
+    // buffer->waitSend(opts.timeout);
+    WAIT_SEND(buffer, opts.timeout);
   }
-  std::cout << "[GLOO] barrier.cc/barrier done" << std::endl;
+  std::cout << "[GLOO] barrier.cc/barrier done" << "\n";
 }
 
 } // namespace gloo

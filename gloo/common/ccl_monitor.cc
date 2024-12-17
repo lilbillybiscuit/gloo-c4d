@@ -1,6 +1,7 @@
 //
 // Created by Billy Qian on 12/16/24.
 //
+
 #include "gloo/common/ccl_monitor.h"
 #include "gloo/context.h"
 
@@ -9,160 +10,165 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <sstream>
 
 namespace gloo {
-namespace ccl {
+    namespace ccl {
+        std::queue<std::string> sendQueue;
+        std::mutex queueMutex;
+        std::condition_variable queueCondVar;
+        bool sendThreadRunning = true;
 
-// Structure to hold data for asynchronous send operations
-struct MonitorData {
-  std::string key;
-  std::string value;
-};
+        void sendDataThread() {
+            CURL *curl = curl_easy_init();
+            if (!curl) {
+                GLOO_DEBUG(ERROR, "Could not initialize libcurl for sending data to monitor");
+                return;
+            }
 
-// Queue for asynchronous send operations
-std::queue<MonitorData> sendQueue;
-std::mutex queueMutex;
-std::condition_variable queueCondVar;
-bool sendThreadRunning = true;
+            while (sendThreadRunning) {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                queueCondVar.wait(lock, [] { return !sendQueue.empty() || !sendThreadRunning; });
 
-// Thread function for sending data asynchronously
-void sendDataThread() {
-  CURL *curl = curl_easy_init();
-  if (!curl) {
-    GLOO_DEBUG(ERROR, "Could not initialize libcurl for sending data to monitor");
-    return;
-  }
+                if (!sendQueue.empty()) {
+                    std::string data = sendQueue.front();
+                    GLOO_DEBUG(VERBOSE, "Sending data to monitor: ", data);
+                    sendQueue.pop();
+                    lock.unlock();
 
-  while (sendThreadRunning) {
-    std::unique_lock<std::mutex> lock(queueMutex);
-    queueCondVar.wait(lock, [] { return !sendQueue.empty() || !sendThreadRunning; });
+                    std::string url = MONITOR_URL;
+                    std::string postData = data;
 
-    if (!sendQueue.empty()) {
-      MonitorData data = sendQueue.front();
-      sendQueue.pop();
-      lock.unlock();
+                    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
+                    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1L);
 
-      std::string url = "http://localhost:8081/log"; // Your C4D agent URL
-      std::string postData = "key=" + data.key + "&value=" + data.value;
+                    CURLcode res = curl_easy_perform(curl);
+                    if (res != CURLE_OK) {
+                        GLOO_DEBUG(ERROR, "Failed to send data to monitor: ", curl_easy_strerror(res));
+                    }
+                } else {
+                    lock.unlock();
+                }
+            }
 
-      curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-      curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
-      curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1L); // Timeout after 1 second
+            curl_easy_cleanup(curl);
+        }
 
-      CURLcode res = curl_easy_perform(curl);
-      if (res != CURLE_OK) {
-        GLOO_DEBUG(ERROR, "Failed to send data to monitor: ", curl_easy_strerror(res));
-      }
-    } else {
-        lock.unlock();
-    }
-  }
+        CCLMonitor::CCLMonitor(const std::shared_ptr<Context> &context)
+            : context_(context), rank_(context->rank), size_(context->size), nextTag_(0) {
+            curl_global_init(CURL_GLOBAL_ALL);
 
-  curl_easy_cleanup(curl);
-}
+            std::thread sender(sendDataThread);
+            sender.detach();
+        }
 
-// Initialize the monitor, get rank and size from the context
-CCLMonitor::CCLMonitor(const std::shared_ptr<Context>& context)
-    : context_(context), rank_(context->rank), size_(context->size) {
-  curl_global_init(CURL_GLOBAL_ALL);
+        CCLMonitor::~CCLMonitor() {
+            {
+                std::unique_lock<std::mutex> lock(queueMutex);
+                sendThreadRunning = false;
+            }
+            queueCondVar.notify_all();
 
-  // Start the sender thread
-  std::thread sender(sendDataThread);
-  sender.detach(); // Detach the thread so it runs independently
-}
+            curl_global_cleanup();
+        }
 
-CCLMonitor::~CCLMonitor() {
-    {
-        std::unique_lock<std::mutex> lock(queueMutex);
-        sendThreadRunning = false;
-    }
-    queueCondVar.notify_all();
+        int CCLMonitor::recordStart(const std::string &opType, const std::string &algorithm, const std::string &dataType, size_t count, int rootRank) {
+            GLOO_DEBUG(INFO, "CCLMonitor::recordStart - Operation: ", opType, ", Algorithm: ", algorithm,
+                       ", DataType: ", dataType, ", Count: ", count, ", RootRank: ", rootRank);
+            int tag = nextTag_++;
+            auto now = std::chrono::steady_clock::now();
+            auto stats = std::make_unique<OperationStats>(tag, "", opType, algorithm, dataType, count, rootRank, now, now, rank_, size_, false);
+            ongoingOperations_[tag] = std::move(stats);
 
-    curl_global_cleanup();
-}
+            sendDataToMonitor(*ongoingOperations_[tag]);
+            return tag;
+        }
 
-void CCLMonitor::recordStart(
-    const std::string& opType,
-    const std::string& algorithm,
-    const std::string& dataType,
-    size_t count,
-    int rootRank) {
-  GLOO_DEBUG(INFO, "CCLMonitor::recordStart - Operation: ", opType, ", Algorithm: ", algorithm, ", DataType: ", dataType, ", Count: ", count, ", RootRank: ", rootRank);
-  OperationStats stats;
-  stats.opType = opType;
-  stats.algorithm = algorithm;
-  stats.dataType = dataType;
-  stats.count = count;
-  stats.rootRank = rootRank;
-  stats.startTime = std::chrono::steady_clock::now();
-  ongoingOperations_[opType] = stats;
-}
+        void CCLMonitor::recordEnd(int tag) {
+            GLOO_DEBUG(INFO, "CCLMonitor::recordEnd - Tag: ", tag);
+            auto time_now = std::chrono::steady_clock::now();
+            auto it = ongoingOperations_.find(tag);
+            if (it != ongoingOperations_.end()) {
+                auto *opStats = dynamic_cast<OperationStats *>(it->second.get());
+                if (opStats != nullptr) {
+                    opStats->endTime = time_now;
+                    opStats->finished = true;
+                    sendDataToMonitor(*opStats);
+                    ongoingOperations_.erase(it);
+                } else {
+                    GLOO_DEBUG(WARNING, "CCLMonitor::recordEnd - Event is not of type OperationStats");
+                }
+            } else {
+                GLOO_DEBUG(WARNING, "CCLMonitor::recordEnd - No matching start event found for tag: ", tag);
+            }
+        }
 
-void CCLMonitor::recordEnd(const std::string& opType) {
-  GLOO_DEBUG(INFO, "CCLMonitor::recordEnd - Operation: ", opType);
-  auto it = ongoingOperations_.find(opType);
-  if (it != ongoingOperations_.end()) {
-    it->second.endTime = std::chrono::steady_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        it->second.endTime - it->second.startTime);
+        int CCLMonitor::recordSendStart(int remoteRank, size_t bytes, const std::string &filename) {
+            int tag = nextTag_++;
+            auto event = std::make_unique<SendRecvEvent>(tag, filename, "send", std::chrono::steady_clock::now(), remoteRank, bytes, rank_, size_, false);
+            ongoingOperations_[tag] = std::move(event);
 
-    // Prepare data to send to the monitor server
-    std::string data =
-        "opType=" + it->second.opType +
-        "&algorithm=" + it->second.algorithm +
-        "&dataType=" + it->second.dataType +
-        "&count=" + std::to_string(it->second.count) +
-        "&rootRank=" + std::to_string(it->second.rootRank) +
-        "&rank=" + std::to_string(rank_) +
-        "&size=" + std::to_string(size_) +
-        "&duration=" + std::to_string(duration.count());
+            GLOO_DEBUG(VERBOSE, "CCLMonitor::recordSendStart - Rank: ", rank_, ", RemoteRank: ", remoteRank,
+                       ", Bytes: ", bytes, ", Tag: ", tag, ", Filename: ", filename);
+            return tag;
+        }
 
-    // Send data to monitor asynchronously
-    sendDataToMonitor(opType + "_end", data);
+        int CCLMonitor::recordRecvStart(int remoteRank, size_t bytes, const std::string &filename) {
+            int tag = nextTag_++;
+            auto event = std::make_unique<SendRecvEvent>(tag, filename, "recv", std::chrono::steady_clock::now(), remoteRank, bytes, rank_, size_, false);
+            ongoingOperations_[tag] = std::move(event);
 
-    ongoingOperations_.erase(it);
-  } else {
-    GLOO_DEBUG(WARNING, "CCLMonitor::recordEnd - No matching start event found for operation: ", opType);
-  }
-}
+            GLOO_DEBUG(VERBOSE, "CCLMonitor::recordRecvStart - Rank: ", rank_, ", RemoteRank: ", remoteRank,
+                       ", Bytes: ", bytes, ", Tag: ", tag, ", Filename: ", filename);
+            return tag;
+        }
 
-    void CCLMonitor::recordSend(int remoteRank, size_t bytes, int tag) {
+        void CCLMonitor::recordSendEnd(int tag) {
+            GLOO_DEBUG(VERBOSE, "CCLMonitor::recordSendEnd - Tag: ", tag);
+            auto time_now = std::chrono::steady_clock::now();
+            auto it = ongoingOperations_.find(tag);
+            if (it != ongoingOperations_.end()) {
+                auto *event = dynamic_cast<SendRecvEvent *>(it->second.get());
+                if (event != nullptr) {
+                    event->time = time_now;
+                    event->finished = true;
+                    sendDataToMonitor(*event);
+                    ongoingOperations_.erase(it);
+                } else {
+                    GLOO_DEBUG(WARNING, "CCLMonitor::recordSendEnd - Event is not of type SendRecvEvent");
+                }
+            } else {
+                GLOO_DEBUG(WARNING, "CCLMonitor::recordSendEnd - No matching start event found for tag: ", tag);
+            }
+        }
 
-    sendEvents[tag] = {std::chrono::steady_clock::now(), remoteRank, bytes};
-    GLOO_DEBUG(VERBOSE, "CCLMonitor::recordSend - Rank: ", rank_, ", RemoteRank: ", remoteRank, ", Bytes: ", bytes, ", Tag: ", tag);
-}
+        void CCLMonitor::recordRecvEnd(int tag) {
+            GLOO_DEBUG(VERBOSE, "CCLMonitor::recordRecvEnd - Tag: ", tag);
+            auto time_now = std::chrono::steady_clock::now();
+            auto it = ongoingOperations_.find(tag);
+            if (it != ongoingOperations_.end()) {
+                auto *event = dynamic_cast<SendRecvEvent *>(it->second.get());
+                if (event != nullptr) {
+                    event->time = time_now;
+                    event->finished = true;
+                    sendDataToMonitor(*event);
+                    ongoingOperations_.erase(it);
+                } else {
+                    GLOO_DEBUG(WARNING, "CCLMonitor::recordRecvEnd - Event is not of type SendRecvEvent");
+                }
+            } else {
+                GLOO_DEBUG(WARNING, "CCLMonitor::recordRecvEnd - No matching start event found for tag: ", tag);
+            }
+        }
 
-    void CCLMonitor::recordRecv(int remoteRank, size_t bytes, int tag) {
-
-    recvEvents[tag] = {std::chrono::steady_clock::now(), remoteRank, bytes};
-    GLOO_DEBUG(VERBOSE, "CCLMonitor::recordRecv - Rank: ", rank_, ", RemoteRank: ", remoteRank, ", Bytes: ", bytes, ", Tag: ", tag);
-
-    // Calculate latency if corresponding send event exists
-    auto sendIt = sendEvents.find(tag);
-    if (sendIt != sendEvents.end()) {
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
-            recvEvents[tag].time - sendIt->second.time);
-
-        std::stringstream dataStream;
-        dataStream << "send_rank=" << sendIt->second.remoteRank
-                   << "&recv_rank=" << rank_
-                   << "&latency_us=" << duration.count()
-                   << "&bytes=" << bytes;
-
-        sendDataToMonitor("latency", dataStream.str());
-
-        // Clean up the recorded send event
-        sendEvents.erase(sendIt);
-    }
-}
-
-// Asynchronous send operation
-void CCLMonitor::sendDataToMonitor(const std::string& key, const std::string& value) {
-  GLOO_DEBUG(VERBOSE, "CCLMonitor::sendDataToMonitor - Key: ", key, ", Value: ", value);
-  std::unique_lock<std::mutex> lock(queueMutex);
-  sendQueue.push({key, value});
-  queueCondVar.notify_one(); // Notify the sender thread that there's data in the queue
-}
-
-} // namespace ccl
+        void CCLMonitor::sendDataToMonitor(const StatStruct &stat) {
+            std::string serialized = stat.serialize();
+            std::string logMsg = (stat.finished ? "Finished: " : "Started: ") + serialized;
+            GLOO_DEBUG(VERBOSE, "CCLMonitor::sendDataToMonitor - ", logMsg);
+            std::unique_lock<std::mutex> lock(queueMutex);
+            sendQueue.push(serialized);
+            queueCondVar.notify_one();
+        }
+    } // namespace ccl
 } // namespace gloo

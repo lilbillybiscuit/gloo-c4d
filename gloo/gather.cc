@@ -18,6 +18,7 @@ namespace gloo {
 void gather(GatherOptions& opts) {
   std::cout << "[GLOO] gather.cc/gather" << std::endl;
   const auto& context = opts.context;
+  RECORD_START("gather", "default", "unknown", context->size)
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
   const auto slot = Slot::build(kGatherSlotPrefix, opts.tag);
@@ -38,7 +39,8 @@ void gather(GatherOptions& opts) {
       if (i == context->rank) {
         continue;
       }
-      out->recv(i, slot, i * chunkSize, chunkSize);
+      // out->recv(i, slot, i * chunkSize, chunkSize);
+      RECV(out, i, slot, i * chunkSize, chunkSize);
     }
 
     // Copy local input to output
@@ -52,11 +54,14 @@ void gather(GatherOptions& opts) {
       if (i == context->rank) {
         continue;
       }
-      out->waitRecv(opts.timeout);
+      // out->waitRecv(opts.timeout);
+      WAIT_RECV(out, opts.timeout);
     }
   } else {
     in->send(opts.root, slot);
-    in->waitSend(opts.timeout);
+    RECORD_SEND_START(opts.root, 8)
+    // in->waitSend(opts.timeout);
+    WAIT_SEND(in, opts.timeout);
   }
   std::cout << "[GLOO] gather.cc/gather done" << std::endl;
 }

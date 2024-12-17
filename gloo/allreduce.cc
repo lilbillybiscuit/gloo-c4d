@@ -150,6 +150,7 @@ void ring(
     ReduceRangeFunction reduceInputs,
     BroadcastRangeFunction broadcastOutputs) {
   const auto& context = opts.context;
+  RECORD_START("allreduce", "ring", "unknown", opts.elements * opts.elementSize / context->size)
   const std::vector<std::unique_ptr<transport::UnboundBuffer>>& out = opts.out;
   const auto slot = Slot::build(kAllreduceSlotPrefix, opts.tag);
   const size_t totalBytes = opts.elements * opts.elementSize;
@@ -287,7 +288,8 @@ void ring(
         // Prepare out[0]->ptr to hold the local reduction
         reduceInputs(prev.recvOffset, prev.recvLength);
         // Wait for segment from neighbor.
-        tmp->waitRecv(opts.timeout);
+        // tmp->waitRecv(opts.timeout);
+        WAIT_RECV(tmp, opts.timeout);
         // Reduce segment from neighbor into out->ptr.
         opts.reduce(
             static_cast<uint8_t*>(out[0]->ptr) + prev.recvOffset,
@@ -296,7 +298,8 @@ void ring(
             prev.recvLength / opts.elementSize);
       }
       if (prev.sendLength > 0) {
-        out[0]->waitSend(opts.timeout);
+        // out[0]->waitSend(opts.timeout);
+        WAIT_SEND(out[0], opts.timeout);
       }
     }
 
@@ -308,14 +311,15 @@ void ring(
       // Compute send and receive offsets and lengths for this iteration.
       auto cur = computeReduceScatterOffsets(i);
       if (cur.recvLength > 0) {
-        tmp->recv(recvRank, slot, segmentOffset[i & 0x1], cur.recvLength);
+        // tmp->rec(recvRank, slot, segmentOffset[i & 0x1], cur.recvLength);
+        RECV(tmp, recvRank, slot, segmentOffset[i & 0x1], cur.recvLength);
       }
       if (cur.sendLength > 0) {
         // Prepare out[0]->ptr to hold the local reduction for this segment
         if (i < numSegmentsPerRank) {
           reduceInputs(cur.sendOffset, cur.sendLength);
         }
-        out[0]->send(sendRank, slot, cur.sendOffset, cur.sendLength);
+        SEND(out[0], sendRank, slot, cur.sendOffset, cur.sendLength);
       }
     }
   }
@@ -363,12 +367,14 @@ void ring(
     if (i >= 2) {
       auto prev = computeAllgatherOffsets(i - 2);
       if (prev.recvLength > 0) {
-        out[0]->waitRecv(opts.timeout);
+        // out[0]->waitRecv(opts.timeout);
+        WAIT_RECV(out[0], opts.timeout);
         // Broadcast received segments to output buffers.
         broadcastOutputs(prev.recvOffset, prev.recvLength);
       }
       if (prev.sendLength > 0) {
-        out[0]->waitSend(opts.timeout);
+        // out[0]->waitSend(opts.timeout);
+        WAIT_SEND(out[0], opts.timeout);
       }
     }
 
@@ -379,10 +385,12 @@ void ring(
     if (i < (numSegments - numSegmentsPerRank)) {
       auto cur = computeAllgatherOffsets(i);
       if (cur.recvLength > 0) {
-        out[0]->recv(recvRank, slot, cur.recvOffset, cur.recvLength);
+        // out[0]->rec(recvRank, slot, cur.recvOffset, cur.recvLength);
+        RECV(out[0], recvRank, slot, cur.recvOffset, cur.recvLength);
       }
       if (cur.sendLength > 0) {
-        out[0]->send(sendRank, slot, cur.sendOffset, cur.sendLength);
+        // out[0]->sen(sendRank, slot, cur.sendOffset, cur.sendLength);
+        SEND(out[0], sendRank, slot, cur.sendOffset, cur.sendLength);
         // Broadcast first segments to outputs buffers.
         if (i < numSegmentsPerRank) {
           broadcastOutputs(cur.sendOffset, cur.sendLength);
@@ -390,6 +398,7 @@ void ring(
       }
     }
   }
+  RECORD_END()
 }
 
 // For a given context size and desired group size, compute the actual group
@@ -431,6 +440,7 @@ void bcube(
     ReduceRangeFunction reduceInputs,
     BroadcastRangeFunction broadcastOutputs) {
   const auto& context = opts.context;
+  RECORD_START("allgather", "bcube", "unknown", opts.elementSize * opts.out[0]->size / context->size)
   const auto slot = Slot::build(kAllreduceSlotPrefix, opts.tag);
   const auto elementSize = opts.elementSize;
   auto& out = opts.out[0];
@@ -527,11 +537,12 @@ void bcube(
       if (src == context->rank) {
         continue;
       }
-      tmp->recv(
-          src,
-          slot,
-          i * group.chunkLength * elementSize,
-          group.myChunkLength * elementSize);
+      // tmp->rec(
+      //     src,
+      //     slot,
+      //     i * group.chunkLength * elementSize,
+      //     group.myChunkLength * elementSize);
+      RECV(tmp, src, slot, i * group.chunkLength * elementSize, group.myChunkLength * elementSize);
     }
 
     // Issue send operations for local chunks to peers.
@@ -553,11 +564,12 @@ void bcube(
         reduceInputs(
             currentChunkOffset * elementSize, currentChunkLength * elementSize);
       }
-      out->send(
-          dst,
-          slot,
-          currentChunkOffset * elementSize,
-          currentChunkLength * elementSize);
+      // out->sen(
+      //     dst,
+      //     slot,
+      //     currentChunkOffset * elementSize,
+      //     currentChunkLength * elementSize);
+      SEND(out, dst, slot, currentChunkOffset * elementSize, currentChunkLength * elementSize);
     }
 
     // Wait for send and receive operations to complete.
@@ -566,8 +578,10 @@ void bcube(
       if (peer == context->rank) {
         continue;
       }
-      tmp->waitRecv();
-      out->waitSend();
+      // tmp->waitRecv();
+      WAIT_RECV(tmp, );
+      // out->waitSend();
+      WAIT_SEND(out, );
     }
 
     // In the first step, prepare the chunk this process is responsible for
@@ -620,11 +634,12 @@ void bcube(
           size_t(std::max(
               int64_t(0),
               int64_t(group.bufferLength) - int64_t(i * group.chunkLength))));
-      out->recv(
-          src,
-          slot,
-          currentChunkOffset * elementSize,
-          currentChunkLength * elementSize);
+      // out->rec(
+      //     src,
+      //     slot,
+      //     currentChunkOffset * elementSize,
+      //     currentChunkLength * elementSize);
+      RECV(out, src, slot, currentChunkOffset * elementSize, currentChunkLength * elementSize);
     }
 
     // Issue send operations for reduced chunk to peers.
@@ -633,11 +648,12 @@ void bcube(
       if (dst == context->rank) {
         continue;
       }
-      out->send(
-          dst,
-          slot,
-          group.myChunkOffset * elementSize,
-          group.myChunkLength * elementSize);
+      // out->sen(
+      //     dst,
+      //     slot,
+      //     group.myChunkOffset * elementSize,
+      //     group.myChunkLength * elementSize);
+      SEND(out, dst, slot, group.myChunkOffset * elementSize, group.myChunkLength * elementSize);
     }
 
     // Wait for operations to complete.
@@ -646,8 +662,10 @@ void bcube(
       if (peer == context->rank) {
         continue;
       }
-      out->waitRecv();
-      out->waitSend();
+      // out->waitRecv();
+      WAIT_RECV(out, );
+      // out->waitSend();
+      WAIT_SEND(out, );
     }
 
     // Broadcast result to multiple output buffers, if applicable.
@@ -667,6 +685,7 @@ void bcube(
           currentChunkOffset * elementSize, currentChunkLength * elementSize);
     }
   }
+  RECORD_END()
 }
 
 } // namespace

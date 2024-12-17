@@ -1,7 +1,6 @@
 //
 // Created by Billy Qian on 12/16/24.
 //
-
 #ifndef DEBUG_H
 #define DEBUG_H
 #pragma once
@@ -12,63 +11,50 @@
 namespace gloo {
     namespace debug {
 
-        // Enum for debug levels
         enum class DebugLevel {
             NONE = 0,
             INFO,
             WARNING,
             ERROR,
             VERBOSE
-          };
+        };
 
-        // Global debug level (can be set at runtime)
         extern DebugLevel global_debug_level;
 
-        // Macro for conditional debugging output based on debug level
+        // Helper function to concatenate all arguments with spaces
+        template<typename... Args>
+        std::string concatenateArgs(const Args&... args) {
+            std::stringstream ss;
+            ((ss << args << ' '), ...);  // fold expression to concatenate all args
+            return ss.str();
+        }
+
 #define GLOO_DEBUG(level, ...)                                         \
-do {                                                                 \
-if (gloo::debug::global_debug_level >= gloo::debug::DebugLevel::level) { \
-gloo::debug::debugPrint(gloo::debug::DebugLevel::level, __FILE__, __LINE__, __VA_ARGS__); \
-}                                                                  \
+do {                                                                   \
+    if (gloo::debug::global_debug_level >= gloo::debug::DebugLevel::level) { \
+        std::stringstream ss;                                          \
+        switch (gloo::debug::DebugLevel::level) {                     \
+            case gloo::debug::DebugLevel::INFO:                       \
+                ss << "[INFO] ";                                      \
+                break;                                                \
+            case gloo::debug::DebugLevel::WARNING:                    \
+                ss << "[WARNING] ";                                   \
+                break;                                                \
+            case gloo::debug::DebugLevel::ERROR:                      \
+                ss << "[ERROR] ";                                     \
+                break;                                                \
+            case gloo::debug::DebugLevel::VERBOSE:                    \
+                ss << "[VERBOSE] ";                                   \
+                break;                                                \
+            default:                                                  \
+                ss << "[DEBUG] ";                                     \
+        }                                                             \
+        ss << __FILE__ << ":" << __LINE__ << ": "                    \
+           << gloo::debug::concatenateArgs(__VA_ARGS__)              \
+           << std::endl;                                             \
+        std::cerr << ss.str();                                       \
+    }                                                                 \
 } while (0)
-
-        inline void debugPrint(DebugLevel level, const char* file, int line, const std::string& msg) {
-            std::stringstream ss;
-            switch (level) {
-                case DebugLevel::INFO:
-                    ss << "[INFO] ";
-                break;
-                case DebugLevel::WARNING:
-                    ss << "[WARNING] ";
-                break;
-                case DebugLevel::ERROR:
-                    ss << "[ERROR] ";
-                break;
-                case DebugLevel::VERBOSE:
-                    ss << "[VERBOSE] ";
-                break;
-                default:
-                    ss << "[DEBUG] ";
-            }
-            ss << file << ":" << line << ": " << msg << std::endl;
-            std::cerr << ss.str(); // Output to stderr to avoid buffering issues
-        }
-
-        // Overload debugPrint to handle various argument types using variadic templates
-        template <typename T, typename... Args>
-        void debugPrint(DebugLevel level, const char* file, int line, const T& first, const Args&... args) {
-            std::stringstream ss;
-            ss << first;
-            debugPrint(level, file, line, ss.str());
-            debugPrint(level, file, line, args...);
-        }
-
-        template <typename T>
-        void debugPrint(DebugLevel level, const char* file, int line, const T& value) {
-            std::stringstream ss;
-            ss << value;
-            debugPrint(level, file, line, ss.str());
-        }
 
     }
 }

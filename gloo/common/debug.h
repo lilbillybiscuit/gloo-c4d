@@ -51,7 +51,7 @@ do {                                                                   \
         }                                                             \
         ss << __FILE__ << ":" << __LINE__ << ": "                    \
            << gloo::debug::concatenateArgs(__VA_ARGS__)              \
-           << std::endl;                                             \
+           << "\n";                                             \
         std::cerr << ss.str();                                       \
     }                                                                 \
 } while (0)

@@ -16,7 +16,7 @@
 namespace gloo {
 
 void gather(GatherOptions& opts) {
-  std::cout << "[GLOO] gather.cc/gather" << std::endl;
+  // std::cout << "[GLOO] gather.cc/gather" << std::endl;
   const auto& context = opts.context;
   RECORD_START("gather", "default", "unknown", context->size)
   transport::UnboundBuffer* in = opts.in.get();
@@ -59,11 +59,11 @@ void gather(GatherOptions& opts) {
     }
   } else {
     in->send(opts.root, slot);
-    RECORD_SEND_START(opts.root, 8)
+    RECORD_SEND_START(in, opts.root, 8)
     // in->waitSend(opts.timeout);
     WAIT_SEND(in, opts.timeout);
   }
-  std::cout << "[GLOO] gather.cc/gather done" << std::endl;
+  // std::cout << "[GLOO] gather.cc/gather done" << std::endl;
 }
 
 } // namespace gloo

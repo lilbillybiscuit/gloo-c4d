@@ -139,7 +139,7 @@ void allgatherv(AllgathervOptions& opts) {
   WAIT_SEND(out, opts.timeout);
   WAIT_RECV(out, opts.timeout);
   RECORD_END();
-  std::cout << "[GLOO] allgatherv.cc/allgather done" << '\n';
+  // std::cout << "[GLOO] allgatherv.cc/allgather done" << '\n';
 }
 
 } // namespace gloo

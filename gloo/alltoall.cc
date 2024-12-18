@@ -16,7 +16,7 @@
 namespace gloo {
 
 void alltoall(AlltoallOptions& opts) {
-  std::cout << "[GLOO] alltoall.cc/alltoall" << std::endl;
+  // std::cout << "[GLOO] alltoall.cc/alltoall" << std::endl;
   const auto& context = opts.context;
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
@@ -52,7 +52,7 @@ void alltoall(AlltoallOptions& opts) {
     in->waitSend(opts.timeout);
     out->waitRecv(opts.timeout);
   }
-  std::cout << "[GLOO] alltoall.cc/alltoall done" << std::endl;
+  // std::cout << "[GLOO] alltoall.cc/alltoall done" << std::endl;
 }
 
 } // namespace gloo

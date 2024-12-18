@@ -18,7 +18,7 @@
 namespace gloo {
 
 void broadcast(BroadcastOptions& opts) {
-  std::cout << "[GLOO] broadcast.cc/broadcast" << std::endl;
+  // std::cout << "[GLOO] broadcast.cc/broadcast" << std::endl;
   const auto& context = opts.context;
   transport::UnboundBuffer* in = opts.in.get();
   transport::UnboundBuffer* out = opts.out.get();
@@ -93,7 +93,7 @@ void broadcast(BroadcastOptions& opts) {
   for (auto i = 0; i < numSends; i++) {
     in->waitSend(opts.timeout);
   }
-  std::cout << "[GLOO] broadcast.cc/broadcast done" << std::endl;
+  // std::cout << "[GLOO] broadcast.cc/broadcast done" << std::endl;
 }
 
 } // namespace gloo

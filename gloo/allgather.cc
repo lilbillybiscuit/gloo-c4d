@@ -17,7 +17,7 @@
 namespace gloo {
 
 void allgather(AllgatherOptions& opts) {
-  std::cout << "[GLOO] using allgather.cc/allgather" << '\n';
+  // std::cout << "[GLOO] using allgather.cc/allgather" << '\n';
   const auto& context = opts.context;
   RECORD_START("allgather", "default", "unknown", context->size);
   transport::UnboundBuffer* in = opts.in.get();

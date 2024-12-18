@@ -58,6 +58,10 @@ namespace gloo {
             }
 
         private:
+            static size_t discardResponseCallback(void *ptr, size_t size, size_t nmemb, void *userdata) {
+                return size * nmemb;  // Return number of bytes processed
+            }
+
             void sendDataThread() {
                 CURL *curl = curl_easy_init();
                 if (!curl) {
@@ -69,6 +73,18 @@ namespace gloo {
                 struct curl_slist *headers = NULL;
                 headers = curl_slist_append(headers, "Content-Type: application/json");
                 headers = curl_slist_append(headers, "Accept: application/json");
+
+                curl_easy_setopt(curl, CURLOPT_URL, MONITOR_URL);
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, discardResponseCallback);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, nullptr);
+                curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L);
+
+                curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+                curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 120L);
+                curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 60L);
+                curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+                curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2_0);
 
                 while (sendThreadRunning_) {
                     std::unique_lock<std::mutex> lock(queueMutex_);
@@ -82,11 +98,8 @@ namespace gloo {
                         sendQueue_.pop();
                         lock.unlock();
 
-                        std::string url = MONITOR_URL;
-
-                        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
                         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
-                        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
                         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 1L);
 
                         CURLcode res = curl_easy_perform(curl);
